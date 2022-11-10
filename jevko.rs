@@ -1,3 +1,5 @@
+use std::iter::FromIterator;
+
 trait JevkoParseStreamRecv {
   fn prefix(&mut self, text: String);
   fn suffix(&mut self, text: String);
@@ -9,6 +11,9 @@ struct JevkoParseStream<'a> {
   is_escaped: bool,
   depth: i64,
   text: String,
+  opener: char, 
+  closer: char, 
+  escaper: char,
 }
 
 trait JevkoParseStreamTrait {
@@ -18,7 +23,12 @@ trait JevkoParseStreamTrait {
 
 impl<'a> JevkoParseStreamTrait for JevkoParseStream<'a> {
   fn end(&mut self) {
-    // if (is_escaped) throw SyntaxError(`Unexpected end after escaper (${escaper})!`)
+    if self.is_escaped {
+      panic!("Unexpected end after escaper ({})!", self.escaper)
+    }
+    if self.depth != 0 {
+      panic!("Unexpected end: missing {} closer(s) ({})!", self.depth, self.closer)
+    }
     // if (parents.length !== 1) {
     //   const parentInfo = parents.pop()
     //   // todo: say which ln, col unclosed
@@ -31,10 +41,6 @@ impl<'a> JevkoParseStreamTrait for JevkoParseStream<'a> {
     // return ret
   }
   fn chunk(&mut self, ch: String) {
-    let opener = '[';
-    let closer = ']';
-    let escaper = '`';
-
     let mut h = 0;
     let mut i = 0;
     let len = ch.chars().count();
@@ -43,12 +49,13 @@ impl<'a> JevkoParseStreamTrait for JevkoParseStream<'a> {
       match ch.chars().nth(i) {
         Some(code) =>
           if self.is_escaped {
-            if code == escaper || code == opener || code == closer {
+            if code == self.escaper || code == self.opener || code == self.closer {
               self.is_escaped = false;
             } else {
-              panic!("Invalid digraph (${escaper + code}) at ${line}:${column}!")
+              // todo: line, col instead of 0,0
+              panic!("Invalid digraph ({}) at {}:{}!", String::from_iter([self.escaper, code]), 0,0)
             }
-          } else if code == escaper {
+          } else if code == self.escaper {
             self.is_escaped = true;
             match ch.get(h..i) {
               Some(substr) => self.text += substr,
@@ -57,7 +64,7 @@ impl<'a> JevkoParseStreamTrait for JevkoParseStream<'a> {
             
             // escapedAt.push(textBuffer.length)
             h = i + 1;
-          } else if code == opener {
+          } else if code == self.opener {
             // if (parents.length >= maxDepth) throw Error(`Invalid parser state! Max depth of ${maxDepth} exceeded!`)
 
             self.depth += 1;
@@ -71,7 +78,7 @@ impl<'a> JevkoParseStreamTrait for JevkoParseStream<'a> {
             
             // escapedAt = []
             h = i + 1;
-          } else if code == closer {
+          } else if code == self.closer {
             // if (parents.length === 1) throw SyntaxError(`Unexpected closer (${closer}) at ${line}:${column}!`)
             self.depth -= 1;
             match ch.get(h..i) {
@@ -104,6 +111,9 @@ fn make_parser(x: &mut dyn JevkoParseStreamRecv) -> JevkoParseStream {
     is_escaped: false,
     depth: 0,
     text: String::new(),
+    opener: '[',
+    closer: ']',
+    escaper: '`',
   };
 }
 
